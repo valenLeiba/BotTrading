@@ -17,7 +17,7 @@ import pandas as pd
 #     return acumulado / contador # Algo asi...
 
 
-class TestStrategy(bt.Strategy):
+class TestStrategy(bt.Strategy): #Estrategia solo de compra
 
     def __init__(self):
         self.dataclose = self.datas[0].close
@@ -41,11 +41,13 @@ class TestStrategy(bt.Strategy):
 
 
 if __name__ == '__main__':
-    
+
+    # Se descargan los datos
     data = yf.download('ORCL', start='2019-1-1', end='2019-12-31')
 
     print(data.columns)
 
+    # Se reacomoda el tipo de dato para que matchee con Pandas
     data = data.rename(columns={
         "Open": "open",
         "High": "high",
@@ -62,7 +64,7 @@ if __name__ == '__main__':
     cerebro.addstrategy(TestStrategy)
 
     modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
-    datapath = os.path.join(modpath, '../../datas/ORCL-2019.txt') #Nombre del archivo  '../../datas/orcl-1995-2014.txt'
+    datapath = os.path.join(modpath, '../../datas/ORCL-2019.txt') #Nombre del archivo
     
     # data = bt.feeds.YahooFinanceCSVData(
     #     dataname=datapath, 
@@ -75,16 +77,15 @@ if __name__ == '__main__':
     # data.to_csv("ORCL-2019.txt")
     cerebro.adddata(dataORCL)
     cerebro.broker.setcash(100000.0)
-    #Faltaria descargar los data feeds y agregar lo de la filmina 63 y 64
 
     print(cerebro.datas.index(1,0,20))
 
-    # print('Starting portfolio value: %.2f' % cerebro.broker.getvalue())
+    print('Starting portfolio value: %.2f' % cerebro.broker.getvalue())
 
-    # cerebro.run()
-    # cerebro.plot()
+    cerebro.run()
+    cerebro.plot()
 
-    # print('Final portfolio value: %.2f' % cerebro.broker.getvalue())
+    print('Final portfolio value: %.2f' % cerebro.broker.getvalue())
 
     # # Para utilizar yf(yfinance) en la consola -> 'pip install yfinance' o 'conda install yfinance'
     # df = yf.download("AAPL", start="2022-1-1", end="2022-12-31", interval="1d")
