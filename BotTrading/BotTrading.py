@@ -21,7 +21,9 @@ class TestStrategy(bt.Strategy): #Estrategia solo de compra
 
     def __init__(self):
         self.dataclose = self.datas[0].close
-
+        self.diacompra = 0
+        # self.isBuy = False
+        
 
     def log(self, txt, dt=None):
         dt = dt or self.datas[0].datetime.date(0)
@@ -29,65 +31,60 @@ class TestStrategy(bt.Strategy): #Estrategia solo de compra
 
 
     def next(self):
-        #Estrategia de compra       /venta
+
         self.log('Close, %2f' % self.dataclose[0])
 
-        if self.dataclose[0] < self.dataclose[-1]:
-            if self.dataclose[-1] < self.dataclose[-2]:
-                self.log('BUY CREATE, %2f'% self.dataclose[0])
-                self.buy()
+        # Corregir porque compra el 3/1 porque toma el cierre del -1 que seria el 30/12/19!!!!!
+        if not self.position:
+            # Estrategia de compra luego de 2 dias de bajas
+            if self.dataclose[0] < self.dataclose[-1]:
+                if (self.dataclose[-1] < self.dataclose[-2]): # and not self.isBuy):
+                    self.log('BUY CREATE, %2f' % self.dataclose[0])
+                    # self.isBuy = True
+                    self.buy()
 
+        elif self.position:
+            self.diacompra += 1
+
+            # # Estrategia de venta luego de 6 dias
+            if self.diacompra == 7:
+                self.log('SELL CREATE, %2f' % self.dataclose[0])
+                self.diacompra = 0
+                # self.isBuy = False
+                self.sell()
 
 
 
 if __name__ == '__main__':
 
-    # Se descargan los datos
-    data = yf.download('ORCL', start='2019-1-1', end='2019-12-31')
-
-    print(data.columns)
-
-    # Se reacomoda el tipo de dato para que matchee con Pandas
-    data = data.rename(columns={
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Adj Close": "adj_close",
-        "Volume": "volume"
-    })
-
-    data.index = pd.to_datetime(data.index)
-    
     #Create a Cerebro entity
     cerebro = bt.Cerebro()
     cerebro.addstrategy(TestStrategy)
 
-    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
-    datapath = os.path.join(modpath, '../../datas/ORCL-2019.txt') #Nombre del archivo
-    
-    # data = bt.feeds.YahooFinanceCSVData(
-    #     dataname=datapath, 
-    #     fromdate=datetime(2019, 1, 1), 
-    #     todate=datetime(2019, 12, 31),
-    #     reverse = False) 
+    # Se descargan los datos
+    dataORCL = pd.DataFrame()
+    data = yf.download('ORCL', start='2019-1-1', end='2019-12-31')
 
+    # Se acomodan los nombres de las columnas al formato deseado, de tuplas pasan a ser columnas de un solo valor.
+    data.columns = [' '.join(col).strip() for col in data.columns.values]
+    data.columns = [col.replace(' ORCL', '') for col in data.columns]
+    data.columns = [col.title() for col in data.columns] # Renombre las columas con mayusculas
+    print(type(data.columns))
+    print(data.columns)
+
+    # Se transforman los datos a tipo Pandas.DataFrame, que es lo que recibe el metodo run()
+    data.index = pd.to_datetime(data.index)
     dataORCL = bt.feeds.PandasData(dataname=data)
+
+    # modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    # datapath = os.path.join(modpath, '../../datas/ORCL-2019.txt') #Nombre del archivo 
 
     # data.to_csv("ORCL-2019.txt")
     cerebro.adddata(dataORCL)
     cerebro.broker.setcash(100000.0)
 
-    print(cerebro.datas.index(1,0,20))
-
     print('Starting portfolio value: %.2f' % cerebro.broker.getvalue())
-
     cerebro.run()
-    cerebro.plot()
-
     print('Final portfolio value: %.2f' % cerebro.broker.getvalue())
 
-    # # Para utilizar yf(yfinance) en la consola -> 'pip install yfinance' o 'conda install yfinance'
-    # df = yf.download("AAPL", start="2022-1-1", end="2022-12-31", interval="1d")
-    
-    # print(df.head(20))
+    cerebro.plot()
