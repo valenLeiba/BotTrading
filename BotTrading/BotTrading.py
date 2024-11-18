@@ -82,7 +82,8 @@ if __name__ == '__main__':
     cerebro.addstrategy(TestStrategy)
 
     # Lista de instrumentos (tickers)
-    instrumentos = ['BBAR', 'TSLA', 'KO']
+    #instrumentos = ['BBAR', 'TSLA', 'KO']
+    instrumentos = ['AAPL', 'MSFT', 'GOOGL']
     for instrumento in instrumentos:
         # Descargar datos con Yahoo Finance
         data = yf.download(instrumento, start='2023-01-01', end='2023-12-31')
