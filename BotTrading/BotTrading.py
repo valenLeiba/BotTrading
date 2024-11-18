@@ -1,111 +1,109 @@
-from __future__ import (absolute_import, division, print_function, unicode_literals)
+"""
+Implementacion de la estrategia del bot de trading para la cursada de trading algoritmico 2024
+"""
+from __future__ import (absolute_import, division,print_function, unicode_literals)
+
 import backtrader as bt
-from datetime import datetime
-import os.path
-import sys
 import yfinance as yf
-import matplotlib as mp
 import pandas as pd
 
 
-class TestStrategy(bt.Strategy): #Estrategia solo de compra
 
+class TestStrategy(bt.Strategy):
     def __init__(self):
-        self.instruments = []  # Lista para almacenar los indicadores SMA de cada instrumento
-        for i, data in enumerate(self.datas):
-            # Crear un SMA para cada instrumento y añadirlo a la lista
-            rsi = bt.indicators.RelativeStrengthIndex()
-            sma = bt.indicators.SimpleMovingAverage(data.close, period=14)
-            order = None
-            buyprice = None
-            buycomm = None
-            self.instruments.append({'data': data, 'sma': sma, 'diacompra': 0, 'rsi': rsi})
+        self.indicadores = []
+        for data in self.datas:
+            # Indicadores
+            rsi = bt.indicators.RelativeStrengthIndex(data, period=14)
+            boll = bt.indicators.BollingerBands(data, period=20)
+            macd = bt.indicators.MACD(data, fast=12, slow=26, signal=9)
+
+            self.indicadores.append({
+                'data': data,
+                'rsi': rsi,
+                'boll': boll,
+                'macd': macd,
+                'order': None
+            })
 
     def log(self, txt, dt=None):
         dt = dt or self.datas[0].datetime.date(0)
-        print('%s, %s' %(dt.isoformat(), txt))
+        print(f'{dt.isoformat()}, {txt}')
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
-            return #Orden de compra/venta enviada o aceptada.
+            return
+
         if order.status in [order.Completed]:
             if order.isbuy():
-                self.log('BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %(order.executed.price,order.executed.value,order.executed.comm))
-                self.buyprice = order.executed.price
-                self.buycomm = order.executed.comm
+                self.log(f'BUY EXECUTED, Price: {order.executed.price:.2f}, Cost: {
+                         order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
             elif order.issell():
-                self.log('SELL EXECUTED, %.2f, Cost: %.2f, Comm %.2f' %(order.executed.price,order.executed.value,order.executed.comm))
-            self.bar_executed = len(self) #Guarda cuando la orden fue ejecutada
-
+                self.log(f'SELL EXECUTED, Price: {order.executed.price:.2f}, Cost: {
+                         order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.log('Order Canceled/Margin/Rejected')
 
-        self.order = None
-
-    def notify_trade(self, trade):
-        if not trade.isclosed:
-            return
-
-        self.log('OPERATION PROFIT, BRUTA %.2f, NETA %.2f' %(trade.pnl, trade.pnlcomm))
+        # Limpiar referencia a la orden
+        for indicador in self.indicadores:
+            if indicador['order'] == order:
+                indicador['order'] = None
 
     def next(self):
+        for indicador in self.indicadores:
+            data = indicador['data']
+            rsi = indicador['rsi']
+            boll = indicador['boll']
+            macd = indicador['macd']
+            order = indicador['order']
 
-        for instrument in self.instruments:
-            data = instrument['data']
-            sma = instrument['sma']
-            diacompra = instrument['diacompra']
-            rsi = instrument['rsi']
-            # Imprimir el valor de cierre y SMA de cada instrumento
-            self.log('%s Close: %.2f, SMA: %.2f, RSI: %.2f' %(data._name, data.close[0], sma[0], rsi[0]))
+            # Cálculo del histograma del MACD
+            macd_hist = macd.macd[0] - macd.signal[0]
 
-            # banda de bolinger > data close
-            if (rsi[0] < 30 and rsi[-1] >=30) or (sma[0] > self.data.close[0]):
-                self.log('BUY CREATE, %.2f' % data.close[0])
-                self.order = self.buy(data=data)
-                # Reiniciar contador después de una compra
-                instrument['diacompra'] = 0
+            # Condición de compra
+            if not self.getposition(data) and order is None:
+                if (rsi[0] < 30 and rsi[-1] >= 30) or \
+                   (data.close[0] < boll.lines.bot[0]) or \
+                   (macd_hist > 0 and macd.macd[-1] - macd.signal[-1] <= 0):
+                    self.log(f'BUY CREATE, {data.close[0]:.2f}')
+                    indicador['order'] = self.buy(data=data)
 
-            elif self.getposition(data):
-                instrument['diacompra'] += 1 #Parametro de salida
-                #(rsi[0] > 70.0 and rsi[-1]<=70) or banda de bolinger < dataclose
-                if (sma[0] < self.data.close[0]) or instrument['diacompra']==6:
-                    self.log('SELL CREATE, %.2f' % data.close[0])
-                    instrument['diacompra'] = 0
-                    self.order = self.sell(data=data)
-                
-
+            # Condición de venta
+            elif self.getposition(data) and order is None:
+                if (rsi[0] > 70 and rsi[-1] <= 70) or \
+                   (data.close[0] > boll.lines.top[0]) or \
+                   (macd_hist < 0 and macd.macd[-1] - macd.signal[-1] >= 0):
+                    self.log(f'SELL CREATE, {data.close[0]:.2f}')
+                    indicador['order'] = self.sell(data=data)
 
 
 if __name__ == '__main__':
-
-    #Create a Cerebro entity
     cerebro = bt.Cerebro()
     cerebro.addstrategy(TestStrategy)
 
-   # Listado de instrumentos (tickers)
-    tickers = ['AAPL', 'MSFT', 'GOOGL']
-    for ticker in tickers:
-        data = yf.download(ticker, start='2019-1-1', end='2019-12-31')
+    # Lista de instrumentos (tickers)
+    instrumentos = ['BBAR', 'TSLA', 'KO']
+    for instrumento in instrumentos:
+        # Descargar datos con Yahoo Finance
+        data = yf.download(instrumento, start='2023-01-01', end='2023-12-31')
 
-        # Asegurarse de que los nombres de las columnas sean cadenas y no tuplas
+        # Ajustar los datos
         data.columns = [col[0] if isinstance(
             col, tuple) else col for col in data.columns]
-
-        # Cambiar los nombres de las columnas a título (opcional)
-        data.columns = [col.title() for col in data.columns]
-
-        # Asegurarse de que el índice está en el formato de fecha y hora correcto
         data.index = pd.to_datetime(data.index)
-
-        # Añadir cada conjunto de datos al cerebro, nombrándolos con el símbolo
-        datafeed = bt.feeds.PandasData(dataname=data, name=ticker)
+        dataname = data
+        name = instrumento
+        datafeed = bt.feeds.PandasData(dataname, name)
         cerebro.adddata(datafeed)
 
+    # Configurar el broker
     cerebro.broker.setcash(100000.0)
     cerebro.broker.setcommission(commission=0.001)
 
-    print('Starting portfolio value: %.2f' % cerebro.broker.getvalue())
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+    start_portfolio = cerebro.broker.getvalue()
     cerebro.run()
-    print('Final portfolio value: %.2f' % cerebro.broker.getvalue())
+    print('Starting Portfolio Value: %.2f' % start_portfolio)
+    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
 
-    cerebro.plot()
+cerebro.plot()
