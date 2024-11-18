@@ -16,7 +16,8 @@ class TestStrategy(bt.Strategy):
             # Indicadores
             rsi = bt.indicators.RelativeStrengthIndex(data, period=14)
             boll = bt.indicators.BollingerBands(data, period=20)
-            macd = bt.indicators.MACD(data, fast=12, slow=26, signal=9)
+            macd = bt.indicators.MACD(data, period_me1 = 12, period_me2 = 26, period_signal = 9)
+            # macd = bt.indicators.MACD(data, fast=12, slow=26, signal=9)
 
             self.indicadores.append({
                 'data': data,
@@ -36,11 +37,9 @@ class TestStrategy(bt.Strategy):
 
         if order.status in [order.Completed]:
             if order.isbuy():
-                self.log(f'BUY EXECUTED, Price: {order.executed.price:.2f}, Cost: {
-                         order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
+                self.log(f'BUY EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
             elif order.issell():
-                self.log(f'SELL EXECUTED, Price: {order.executed.price:.2f}, Cost: {
-                         order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
+                self.log(f'SELL EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.log('Order Canceled/Margin/Rejected')
 
@@ -82,7 +81,7 @@ if __name__ == '__main__':
     cerebro.addstrategy(TestStrategy)
 
     # Lista de instrumentos (tickers)
-    #instrumentos = ['BBAR', 'TSLA', 'KO']
+    # instrumentos = ['BBAR', 'TSLA', 'KO']
     instrumentos = ['AAPL', 'MSFT', 'GOOGL']
     for instrumento in instrumentos:
         # Descargar datos con Yahoo Finance
@@ -92,9 +91,7 @@ if __name__ == '__main__':
         data.columns = [col[0] if isinstance(
             col, tuple) else col for col in data.columns]
         data.index = pd.to_datetime(data.index)
-        dataname = data
-        name = instrumento
-        datafeed = bt.feeds.PandasData(dataname, name)
+        datafeed = bt.feeds.PandasData(dataname=data, name=instrumento)
         cerebro.adddata(datafeed)
 
     # Configurar el broker
