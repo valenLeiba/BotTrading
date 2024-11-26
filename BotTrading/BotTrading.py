@@ -3,27 +3,35 @@ Implementacion de la estrategia del bot de trading para la cursada de trading al
 """
 from __future__ import (absolute_import, division,print_function, unicode_literals)
 
-import backtrader as bt
+import backtrader as bt 
 import yfinance as yf
 import pandas as pd
-
+import matplotlib
 
 
 class TestStrategy(bt.Strategy):
+    params = (
+        ('rapida_ma', 20),  # Período de la media móvil rápida
+        ('lenta_ma', 50),  # Período de la media móvil lenta
+        ('rsi_period', 20),  # Período del RSI
+        ('boll_period', 20),  # Período de las bandas de Bollinger
+    )
+
     def __init__(self):
-        self.indicadores = []
+        self.instruments = []
         for data in self.datas:
             # Indicadores
-            rsi = bt.indicators.RelativeStrengthIndex(data, period=14)
-            boll = bt.indicators.BollingerBands(data, period=20)
-            macd = bt.indicators.MACD(data, period_me1 = 12, period_me2 = 26, period_signal = 9)
-            # macd = bt.indicators.MACD(data, fast=12, slow=26, signal=9)
+            sma_rapido = bt.indicators.SimpleMovingAverage(data, period=self.params.rapida_ma)
+            sma_lento = bt.indicators.SimpleMovingAverage(data, period=self.params.lenta_ma)
+            rsi = bt.indicators.RelativeStrengthIndex(data,period=self.params.rsi_period)
+            boll = bt.indicators.BollingerBands(data, period=self.params.boll_period)
 
-            self.indicadores.append({
+            self.instruments.append({
                 'data': data,
+                'sma_rapido': sma_rapido,
+                'sma_lento': sma_lento,
                 'rsi': rsi,
                 'boll': boll,
-                'macd': macd,
                 'order': None
             })
 
@@ -44,36 +52,36 @@ class TestStrategy(bt.Strategy):
             self.log('Order Canceled/Margin/Rejected')
 
         # Limpiar referencia a la orden
-        for indicador in self.indicadores:
-            if indicador['order'] == order:
-                indicador['order'] = None
+        for instrument in self.instruments:
+            if instrument['order'] == order:
+                instrument['order'] = None
 
     def next(self):
-        for indicador in self.indicadores:
-            data = indicador['data']
-            rsi = indicador['rsi']
-            boll = indicador['boll']
-            macd = indicador['macd']
-            order = indicador['order']
+        total_cash = self.broker.get_cash()
+        
+        for instrument in self.instruments:
+            data = instrument['data']
+            sma_rapido = instrument['sma_rapido']
+            sma_lento = instrument['sma_lento']
+            rsi = instrument['rsi']
+            boll = instrument['boll']
+            order = instrument['order']
+            position = self.getposition(data)
 
-            # Cálculo del histograma del MACD
-            macd_hist = macd.macd[0] - macd.signal[0]
+            cash_por_instrumento = total_cash // len(self.datas)  # Divide el efectivo disponible entre los instrumentos
+            size = int(cash_por_instrumento / data.close[0])  # Tamaño de la posición basado en el efectivo asignado
 
             # Condición de compra
-            if not self.getposition(data) and order is None:
-                if (rsi[0] < 30 and rsi[-1] >= 30) or \
-                   (data.close[0] < boll.lines.bot[0]) or \
-                   (macd_hist > 0 and macd.macd[-1] - macd.signal[-1] <= 0):
+            if not position and order is None:
+                if sma_rapido[0] > sma_lento[0] or (rsi[0] < 40) or  (data.close[0] < boll.lines.bot[0]):  # Señal de tendencia alcista
                     self.log(f'BUY CREATE, {data.close[0]:.2f}')
-                    indicador['order'] = self.buy(data=data)
+                    instrument['order'] = self.buy(data=data, size=size)
 
             # Condición de venta
-            elif self.getposition(data) and order is None:
-                if (rsi[0] > 70 and rsi[-1] <= 70) or \
-                   (data.close[0] > boll.lines.top[0]) or \
-                   (macd_hist < 0 and macd.macd[-1] - macd.signal[-1] >= 0):
+            elif position and order is None:
+                if sma_rapido[0] < sma_lento[0] or rsi[0] > 65 or (data.close[0] > boll.lines.top[0] and self.position.size > 0):  # Señal de tendencia bajista
                     self.log(f'SELL CREATE, {data.close[0]:.2f}')
-                    indicador['order'] = self.sell(data=data)
+                    instrument['order'] = self.sell(data=data, size=position.size)
 
 
 if __name__ == '__main__':
@@ -81,11 +89,11 @@ if __name__ == '__main__':
     cerebro.addstrategy(TestStrategy)
 
     # Lista de instrumentos (tickers)
-    # instrumentos = ['BBAR', 'TSLA', 'KO']
-    instrumentos = ['AAPL', 'MSFT', 'GOOGL']
+    #instrumentos = ['XOM', 'CVX','BP']
+    instrumentos = ['MSFT', 'GOOGL','AAPL']
     for instrumento in instrumentos:
         # Descargar datos con Yahoo Finance
-        data = yf.download(instrumento, start='2023-01-01', end='2023-12-31')
+        data = yf.download(instrumento, start='2020-01-01', end='2023-12-31')
 
         # Ajustar los datos
         data.columns = [col[0] if isinstance(
